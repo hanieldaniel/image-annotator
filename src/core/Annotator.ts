@@ -1,0 +1,376 @@
+import type {
+  AnnotatorConfig,
+  AnnotatorEvents,
+  AnnotatorAPI,
+  ImageSource,
+  ToolType,
+  ToolStyle,
+  Annotation,
+  ToolbarItem,
+} from '../types'
+import { History } from './History'
+import { CanvasRenderer } from './CanvasRenderer'
+import { ToolManager } from './ToolManager'
+import { exportToBlob } from './Export'
+import { captureScreenshot } from '../sources/ScreenshotCapture'
+import { loadFile } from '../sources/FileUpload'
+import { captureFromCamera } from '../sources/CameraCapture'
+import { getToolbarHTML, updateToolbarForActiveTool, updateZoomLabel } from '../ui/toolbar'
+import { STYLES } from '../ui/styles/styles'
+
+const DEFAULT_TOOLBAR: ToolbarItem[] = [
+  { tool: 'rect' },
+  { tool: 'arrow' },
+  { tool: 'text' },
+  { tool: 'blur' },
+  { tool: 'ellipse' },
+  { tool: 'callout' },
+]
+
+const DEFAULT_STYLE: ToolStyle = {
+  color: '#ff0000',
+  fillAlpha: 0,
+  strokeColor: '#ff0000',
+  strokeWidth: 2,
+  opacity: 1,
+  fontSize: 16,
+  radius: 12,
+}
+
+const ZOOM_STEP = 0.25
+const ZOOM_MIN = 0.25
+const ZOOM_MAX = 4
+
+export class Annotator implements AnnotatorAPI {
+  private shadow!: ShadowRoot
+  private modal!: HTMLElement
+  private canvas!: HTMLCanvasElement
+  private canvasWrap!: HTMLElement
+  private toolbar!: HTMLElement
+  private renderer!: CanvasRenderer
+  private toolManager!: ToolManager
+  private history = new History()
+  private annotations: Annotation[] = []
+  private activeTool: ToolType | null = null
+  private selectedId: string | null = null
+  private style: ToolStyle
+  private image: HTMLImageElement | null = null
+  private handlers = new Map<string, Set<Function>>()
+  private config: Required<AnnotatorConfig>
+  private host!: HTMLElement
+  private zoom = 1
+  private canvasEventsBound = false
+
+  constructor(config: AnnotatorConfig = {}) {
+    this.config = {
+      toolbar: config.toolbar ?? DEFAULT_TOOLBAR,
+      defaultStyle: { ...DEFAULT_STYLE, ...config.defaultStyle },
+      customToolbar: config.customToolbar ?? false,
+    }
+    this.style = { ...DEFAULT_STYLE, ...config.defaultStyle }
+  }
+
+  private buildDOM(): void {
+    this.host = document.createElement('div')
+    this.host.setAttribute('data-img-marker', '')
+    this.shadow = this.host.attachShadow({ mode: 'open' })
+
+    const style = document.createElement('style')
+    style.textContent = STYLES
+    this.shadow.appendChild(style)
+
+    this.modal = document.createElement('div')
+    this.modal.className = 'im-modal'
+    this.shadow.appendChild(this.modal)
+
+    const overlay = document.createElement('div')
+    overlay.className = 'im-overlay'
+    this.modal.appendChild(overlay)
+
+    const dialog = document.createElement('div')
+    dialog.className = 'im-dialog'
+    overlay.appendChild(dialog)
+
+    this.canvasWrap = document.createElement('div')
+    this.canvasWrap.className = 'im-canvas-wrap'
+
+    this.canvas = document.createElement('canvas')
+    this.canvasWrap.appendChild(this.canvas)
+    dialog.appendChild(this.canvasWrap)
+
+    if (!this.config.customToolbar) {
+      this.toolbar = document.createElement('div')
+      this.toolbar.className = 'im-toolbar'
+      this.toolbar.innerHTML = getToolbarHTML(this.config.toolbar, this.style)
+      dialog.appendChild(this.toolbar)
+      this.bindDefaultToolbar(this.toolbar)
+    }
+
+    const actions = document.createElement('div')
+    actions.className = 'im-actions'
+    actions.innerHTML = `
+      <button class="im-btn im-btn-cancel">Cancel</button>
+      <button class="im-btn im-btn-save">Save</button>
+    `
+    dialog.appendChild(actions)
+
+    actions.querySelector('.im-btn-cancel')!.addEventListener('click', () => this.emit('cancel'))
+    actions.querySelector('.im-btn-save')!.addEventListener('click', () => this.save())
+
+    document.body.appendChild(this.host)
+  }
+
+  private bindDefaultToolbar(toolbar: HTMLElement): void {
+    toolbar.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-tool]')
+      if (btn) {
+        this.selectTool(btn.dataset.tool as ToolType)
+        return
+      }
+      const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
+      if (!action) return
+      if (action.dataset.action === 'undo') this.undo()
+      if (action.dataset.action === 'redo') this.redo()
+      if (action.dataset.action === 'zoom-in') this.zoomIn()
+      if (action.dataset.action === 'zoom-out') this.zoomOut()
+    })
+
+    toolbar.querySelector<HTMLInputElement>('.im-color')
+      ?.addEventListener('input', (e) => this.setColor((e.target as HTMLInputElement).value))
+    toolbar.querySelector<HTMLInputElement>('.im-fill-alpha')
+      ?.addEventListener('input', (e) => this.setFillAlpha(Number((e.target as HTMLInputElement).value)))
+    toolbar.querySelector<HTMLInputElement>('.im-stroke-color')
+      ?.addEventListener('input', (e) => this.setStrokeColor((e.target as HTMLInputElement).value))
+    toolbar.querySelector<HTMLInputElement>('.im-stroke-width')
+      ?.addEventListener('input', (e) => this.setStrokeWidth(Number((e.target as HTMLInputElement).value)))
+    toolbar.querySelector<HTMLInputElement>('.im-opacity')
+      ?.addEventListener('input', (e) => this.setOpacity(Number((e.target as HTMLInputElement).value)))
+    toolbar.querySelector<HTMLInputElement>('.im-font-size')
+      ?.addEventListener('input', (e) => this.setFontSize(Number((e.target as HTMLInputElement).value)))
+    toolbar.querySelector<HTMLInputElement>('.im-radius')
+      ?.addEventListener('input', (e) => this.setRadius(Number((e.target as HTMLInputElement).value)))
+
+    updateToolbarForActiveTool(toolbar, this.activeTool)
+  }
+
+  private bindCanvasEvents(): void {
+    if (this.canvasEventsBound) {
+      this.toolManager.setAnnotations(this.annotations)
+      return
+    }
+
+    this.toolManager = new ToolManager(
+      this.canvas,
+      () => this.activeTool,
+      () => this.style,
+      () => this.selectedId,
+      (annotations) => {
+        this.annotations = annotations
+        this.redraw()
+      },
+      (annotations) => {
+        this.annotations = annotations
+        this.history.push(annotations)
+        this.redraw()
+      },
+      (id) => {
+        this.selectedId = id
+        this.redraw()
+      },
+      this.annotations,
+    )
+
+    const down = (e: MouseEvent | TouchEvent) => this.toolManager.onPointerDown(e)
+    const move = (e: MouseEvent | TouchEvent) => this.toolManager.onPointerMove(e)
+    const up = (e: MouseEvent | TouchEvent) => this.toolManager.onPointerUp(e)
+
+    this.canvas.addEventListener('mousedown', down)
+    this.canvas.addEventListener('mousemove', move)
+    this.canvas.addEventListener('mouseup', up)
+    this.canvas.addEventListener('touchstart', down, { passive: false })
+    this.canvas.addEventListener('touchmove', move, { passive: false })
+    this.canvas.addEventListener('touchend', up)
+
+    this.canvasEventsBound = true
+  }
+
+  private bindKeyboard(): void {
+    this._keyHandler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); this.undo() }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); this.redo() }
+      if (e.key === 'Escape') { e.preventDefault(); this.toolManager?.cancelInProgress() }
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected() }
+    }
+    document.addEventListener('keydown', this._keyHandler)
+  }
+
+  private _keyHandler: ((e: KeyboardEvent) => void) | null = null
+
+  private unbindKeyboard(): void {
+    if (this._keyHandler) {
+      document.removeEventListener('keydown', this._keyHandler)
+      this._keyHandler = null
+    }
+  }
+
+  private redraw(): void {
+    if (!this.image) return
+    this.renderer.render(this.image, this.annotations, this.selectedId)
+  }
+
+  private applyZoom(): void {
+    this.canvas.style.transform = `scale(${this.zoom})`
+    this.canvasWrap.classList.toggle('im-select-mode', this.activeTool === null)
+    if (this.toolbar) updateZoomLabel(this.toolbar, this.zoom)
+  }
+
+  private async save(): Promise<void> {
+    const blob = await exportToBlob(this.canvas)
+    this.emit('save', blob)
+  }
+
+  async open(source: ImageSource): Promise<void> {
+    this.history.reset()
+    this.annotations = []
+    this.selectedId = null
+
+    if (!this.host) this.buildDOM()
+
+    // Screenshot captured before modal opens so overlay sees unobstructed page
+    let imageData: string
+    switch (source.type) {
+      case 'screenshot': imageData = await captureScreenshot(); break
+      case 'file': imageData = await loadFile(source.file); break
+      case 'camera': imageData = await captureFromCamera(this.shadow); break
+    }
+
+    this.modal.classList.add('im-modal--open')
+    this.bindKeyboard()
+
+    await this.loadImage(imageData)
+    this.renderer = new CanvasRenderer(this.canvas)
+    this.bindCanvasEvents()
+    this.applyZoom()
+    this.redraw()
+  }
+
+  private loadImage(src: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => {
+        this.canvas.width = img.naturalWidth
+        this.canvas.height = img.naturalHeight
+        this.image = img
+        resolve()
+      }
+      img.onerror = reject
+      img.src = src
+    })
+  }
+
+  close(): void {
+    this.modal.classList.remove('im-modal--open')
+    this.unbindKeyboard()
+    this.toolManager?.setAnnotations([])
+    this.annotations = []
+    this.selectedId = null
+    this.history.reset()
+    this.zoom = 1
+  }
+
+  selectTool(tool: ToolType | null): void {
+    this.activeTool = this.activeTool === tool ? null : tool
+    if (this.toolbar) updateToolbarForActiveTool(this.toolbar, this.activeTool)
+    this.canvasWrap?.classList.toggle('im-select-mode', this.activeTool === null)
+    this.emit('tool-change', this.activeTool)
+  }
+
+  setColor(color: string): void {
+    this.style = { ...this.style, color }
+    this.emit('style-change', this.style)
+  }
+
+  setFillAlpha(alpha: number): void {
+    this.style = { ...this.style, fillAlpha: alpha }
+    this.emit('style-change', this.style)
+  }
+
+  setStrokeColor(color: string): void {
+    this.style = { ...this.style, strokeColor: color }
+    this.emit('style-change', this.style)
+  }
+
+  setStrokeWidth(width: number): void {
+    this.style = { ...this.style, strokeWidth: width }
+    this.emit('style-change', this.style)
+  }
+
+  setOpacity(opacity: number): void {
+    this.style = { ...this.style, opacity }
+    this.emit('style-change', this.style)
+  }
+
+  setFontSize(size: number): void {
+    this.style = { ...this.style, fontSize: size }
+    this.emit('style-change', this.style)
+  }
+
+  setRadius(radius: number): void {
+    this.style = { ...this.style, radius }
+    this.emit('style-change', this.style)
+  }
+
+  getSelected(): string | null {
+    return this.selectedId
+  }
+
+  setSelected(id: string | null): void {
+    this.selectedId = id
+  }
+
+  deleteSelected(): void {
+    if (!this.selectedId) return
+    this.annotations = this.annotations.filter((a) => a.id !== this.selectedId)
+    this.selectedId = null
+    this.toolManager?.setAnnotations(this.annotations)
+    this.history.push(this.annotations)
+    this.redraw()
+  }
+
+  zoomIn(): void {
+    this.zoom = Math.min(ZOOM_MAX, Math.round((this.zoom + ZOOM_STEP) * 100) / 100)
+    this.applyZoom()
+  }
+
+  zoomOut(): void {
+    this.zoom = Math.max(ZOOM_MIN, Math.round((this.zoom - ZOOM_STEP) * 100) / 100)
+    this.applyZoom()
+  }
+
+  undo(): void {
+    this.annotations = this.history.undo()
+    this.toolManager?.setAnnotations(this.annotations)
+    this.selectedId = null
+    this.redraw()
+  }
+
+  redo(): void {
+    this.annotations = this.history.redo()
+    this.toolManager?.setAnnotations(this.annotations)
+    this.selectedId = null
+    this.redraw()
+  }
+
+  on<K extends keyof AnnotatorEvents>(event: K, handler: AnnotatorEvents[K]): void {
+    if (!this.handlers.has(event)) this.handlers.set(event, new Set())
+    this.handlers.get(event)!.add(handler)
+  }
+
+  off<K extends keyof AnnotatorEvents>(event: K, handler: AnnotatorEvents[K]): void {
+    this.handlers.get(event)?.delete(handler)
+  }
+
+  private emit<K extends keyof AnnotatorEvents>(event: K, ...args: Parameters<AnnotatorEvents[K]>): void {
+    this.handlers.get(event)?.forEach((h) => (h as Function)(...args))
+  }
+}

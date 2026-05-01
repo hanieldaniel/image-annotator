@@ -1,0 +1,45 @@
+{
+  "name": "@hanieldaniel/img-marker",
+  "version": "0.1.0",
+  "description": "Framework-agnostic image annotation library",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "demo": "npm run build && cd demo && npx vite"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.0.0",
+    "jsdom": "^29.1.1",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.0.0"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1"
+  },
+  "keywords": [
+    "image",
+    "annotation",
+    "marker",
+    "canvas"
+  ],
+  "license": "MIT"
+}
