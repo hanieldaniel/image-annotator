@@ -1,6 +1,6 @@
 {
   "name": "@hanieldaniel/img-marker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-agnostic image annotation library",
   "type": "module",
   "main": "./dist/index.cjs",
