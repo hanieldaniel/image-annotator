@@ -15,6 +15,5 @@ export type {
   TextAnnotation,
   BlurAnnotation,
   EllipseAnnotation,
-  CalloutAnnotation,
   Point,
 } from './types'

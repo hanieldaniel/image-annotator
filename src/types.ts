@@ -1,4 +1,4 @@
-export type ToolType = 'rect' | 'arrow' | 'text' | 'blur' | 'ellipse' | 'callout'
+export type ToolType = 'rect' | 'arrow' | 'text' | 'blur' | 'ellipse'
 
 export interface Point {
   x: number
@@ -59,24 +59,12 @@ export interface EllipseAnnotation extends BaseAnnotation {
   ry: number
 }
 
-export interface CalloutAnnotation extends BaseAnnotation {
-  type: 'callout'
-  x: number
-  y: number
-  width: number
-  height: number
-  text: string
-  tailX: number
-  tailY: number
-}
-
 export type Annotation =
   | RectAnnotation
   | ArrowAnnotation
   | TextAnnotation
   | BlurAnnotation
   | EllipseAnnotation
-  | CalloutAnnotation
 
 export type ImageSource =
   | { type: 'screenshot' }

@@ -8,7 +8,6 @@ const CONTROLS: Record<ToolType, Control[]> = {
   arrow:   ['strokeColor'],
   blur:    ['radius'],
   text:    ['fontSize', 'strokeColor'],
-  callout: ['fontSize', 'strokeColor', 'strokeWidth'],
 }
 
 export function toolControls(tool: ToolType | null): Control[] {

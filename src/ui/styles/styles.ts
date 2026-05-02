@@ -28,6 +28,7 @@ export const STYLES = `
   .im-canvas-wrap {
     overflow: auto;
     flex: 1;
+    min-height: 0;
     position: relative;
     background: #111;
     display: flex;
@@ -37,9 +38,9 @@ export const STYLES = `
 
   .im-canvas-wrap canvas {
     display: block;
-    transform-origin: top left;
     cursor: crosshair;
     flex-shrink: 0;
+    margin: 0 auto;
   }
 
   .im-canvas-wrap.im-select-mode canvas { cursor: default; }

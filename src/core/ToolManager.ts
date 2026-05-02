@@ -1,5 +1,13 @@
-import type { Annotation, ToolType, ToolStyle, Point, CalloutAnnotation } from '../types'
+import type { Annotation, ToolType, ToolStyle, Point } from '../types'
 import { hitTest } from './hitTest'
+
+const HANDLE_HIT_RADIUS = 8
+
+const HANDLE_CURSORS = [
+  'nw-resize', 'n-resize', 'ne-resize',
+  'w-resize',              'e-resize',
+  'sw-resize', 's-resize', 'se-resize',
+]
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -12,7 +20,77 @@ function translateAnnotation(ann: Annotation, dx: number, dy: number): Annotatio
     case 'arrow': return { ...ann, from: { x: ann.from.x + dx, y: ann.from.y + dy }, to: { x: ann.to.x + dx, y: ann.to.y + dy } }
     case 'ellipse': return { ...ann, cx: ann.cx + dx, cy: ann.cy + dy }
     case 'text': return { ...ann, x: ann.x + dx, y: ann.y + dy }
-    case 'callout': return { ...ann, x: ann.x + dx, y: ann.y + dy, tailX: ann.tailX + dx, tailY: ann.tailY + dy }
+  }
+}
+
+function handlePoints(ann: Annotation): Point[] | null {
+  switch (ann.type) {
+    case 'rect':
+    case 'blur': {
+      const { x, y, width: w, height: h } = ann
+      return [
+        { x, y }, { x: x + w / 2, y }, { x: x + w, y },
+        { x, y: y + h / 2 }, { x: x + w, y: y + h / 2 },
+        { x, y: y + h }, { x: x + w / 2, y: y + h }, { x: x + w, y: y + h },
+      ]
+    }
+    case 'ellipse': {
+      const { cx, cy, rx, ry } = ann
+      const x = cx - rx, y = cy - ry, w = rx * 2, h = ry * 2
+      return [
+        { x, y }, { x: x + w / 2, y }, { x: x + w, y },
+        { x, y: y + h / 2 }, { x: x + w, y: y + h / 2 },
+        { x, y: y + h }, { x: x + w / 2, y: y + h }, { x: x + w, y: y + h },
+      ]
+    }
+    case 'arrow': return [ann.from, ann.to]
+    default: return null
+  }
+}
+
+function hitTestHandle(point: Point, ann: Annotation): number | null {
+  const pts = handlePoints(ann)
+  if (!pts) return null
+  for (let i = 0; i < pts.length; i++) {
+    if (Math.hypot(point.x - pts[i].x, point.y - pts[i].y) <= HANDLE_HIT_RADIUS) return i
+  }
+  return null
+}
+
+function resizeAnnotation(ann: Annotation, handleIndex: number, dx: number, dy: number): Annotation {
+  switch (ann.type) {
+    case 'rect':
+    case 'blur': {
+      let { x, y, width: w, height: h } = ann
+      // Indices: 0=TL,1=TC,2=TR,3=ML,4=MR,5=BL,6=BC,7=BR
+      if (handleIndex === 0) { x += dx; y += dy; w -= dx; h -= dy }
+      else if (handleIndex === 1) { y += dy; h -= dy }
+      else if (handleIndex === 2) { y += dy; w += dx; h -= dy }
+      else if (handleIndex === 3) { x += dx; w -= dx }
+      else if (handleIndex === 4) { w += dx }
+      else if (handleIndex === 5) { x += dx; w -= dx; h += dy }
+      else if (handleIndex === 6) { h += dy }
+      else if (handleIndex === 7) { w += dx; h += dy }
+      return { ...ann, x, y, width: Math.max(4, w), height: Math.max(4, h) }
+    }
+    case 'ellipse': {
+      let x = ann.cx - ann.rx, y = ann.cy - ann.ry, w = ann.rx * 2, h = ann.ry * 2
+      if (handleIndex === 0) { x += dx; y += dy; w -= dx; h -= dy }
+      else if (handleIndex === 1) { y += dy; h -= dy }
+      else if (handleIndex === 2) { y += dy; w += dx; h -= dy }
+      else if (handleIndex === 3) { x += dx; w -= dx }
+      else if (handleIndex === 4) { w += dx }
+      else if (handleIndex === 5) { x += dx; w -= dx; h += dy }
+      else if (handleIndex === 6) { h += dy }
+      else if (handleIndex === 7) { w += dx; h += dy }
+      w = Math.max(8, w); h = Math.max(8, h)
+      return { ...ann, cx: x + w / 2, cy: y + h / 2, rx: w / 2, ry: h / 2 }
+    }
+    case 'arrow': {
+      if (handleIndex === 0) return { ...ann, from: { x: ann.from.x + dx, y: ann.from.y + dy } }
+      return { ...ann, to: { x: ann.to.x + dx, y: ann.to.y + dy } }
+    }
+    default: return ann
   }
 }
 
@@ -20,11 +98,12 @@ interface DragState {
   startX: number
   startY: number
   annotation: Annotation | null
-  mode: 'draw' | 'move'
+  mode: 'draw' | 'move' | 'resize'
+  handleIndex: number
 }
 
 export class ToolManager {
-  private drag: DragState = { startX: 0, startY: 0, annotation: null, mode: 'draw' }
+  private drag: DragState = { startX: 0, startY: 0, annotation: null, mode: 'draw', handleIndex: -1 }
   private textWrapper: HTMLDivElement | null = null
   private textInput: HTMLTextAreaElement | null = null
 
@@ -69,35 +148,56 @@ export class ToolManager {
     const tool = this.getActiveTool()
 
     if (tool === null) {
+      const selectedId = this.getSelectedId()
+      if (selectedId) {
+        const sel = this.annotations.find((a) => a.id === selectedId)
+        if (sel) {
+          const hi = hitTestHandle(p, sel)
+          if (hi !== null) {
+            this.drag = { startX: p.x, startY: p.y, annotation: { ...sel } as Annotation, mode: 'resize', handleIndex: hi }
+            return
+          }
+        }
+      }
       const hitId = hitTest(p, this.annotations)
       this.onSelect(hitId)
       if (hitId) {
         const ann = this.annotations.find((a) => a.id === hitId)!
-        this.drag = { startX: p.x, startY: p.y, annotation: { ...ann } as Annotation, mode: 'move' }
+        this.drag = { startX: p.x, startY: p.y, annotation: { ...ann } as Annotation, mode: 'move', handleIndex: -1 }
       }
       return
     }
 
-    if (tool === 'text' || tool === 'callout') {
-      this.startTextEntry(e, p, tool, { ...this.getStyle() })
+    if (tool === 'text') {
+      this.startTextEntry(e, p, { ...this.getStyle() })
       return
     }
 
     const ann = this.createInitial(tool, p, { ...this.getStyle() })
     if (!ann) return
-    this.drag = { startX: p.x, startY: p.y, annotation: ann, mode: 'draw' }
+    this.drag = { startX: p.x, startY: p.y, annotation: ann, mode: 'draw', handleIndex: -1 }
   }
 
   onPointerMove(e: MouseEvent | TouchEvent): void {
-    if (!this.drag.annotation) return
+    if (!this.drag.annotation) {
+      if (this.getActiveTool() === null) this.updateHoverCursor(this.clientPoint(e))
+      else this.canvas.style.cursor = ''
+      return
+    }
     e.preventDefault()
     const p = this.clientPoint(e)
+    const dx = p.x - this.drag.startX
+    const dy = p.y - this.drag.startY
 
     if (this.drag.mode === 'move') {
-      const dx = p.x - this.drag.startX
-      const dy = p.y - this.drag.startY
       const moved = translateAnnotation(this.drag.annotation, dx, dy)
       this.onPreview(this.annotations.map((a) => (a.id === moved.id ? moved : a)))
+      return
+    }
+
+    if (this.drag.mode === 'resize') {
+      const resized = resizeAnnotation(this.drag.annotation, this.drag.handleIndex, dx, dy)
+      this.onPreview(this.annotations.map((a) => (a.id === resized.id ? resized : a)))
       return
     }
 
@@ -108,29 +208,50 @@ export class ToolManager {
   onPointerUp(e: MouseEvent | TouchEvent): void {
     if (!this.drag.annotation) return
     const p = this.clientPoint(e)
+    const dx = p.x - this.drag.startX
+    const dy = p.y - this.drag.startY
 
     if (this.drag.mode === 'move') {
-      const dx = p.x - this.drag.startX
-      const dy = p.y - this.drag.startY
       const moved = translateAnnotation(this.drag.annotation, dx, dy)
       this.annotations = this.annotations.map((a) => (a.id === moved.id ? moved : a))
-      this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw' }
+      this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw', handleIndex: -1 }
+      this.onCommit(this.annotations)
+      return
+    }
+
+    if (this.drag.mode === 'resize') {
+      const resized = resizeAnnotation(this.drag.annotation, this.drag.handleIndex, dx, dy)
+      this.annotations = this.annotations.map((a) => (a.id === resized.id ? resized : a))
+      this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw', handleIndex: -1 }
       this.onCommit(this.annotations)
       return
     }
 
     this.updateDrag(p)
     const ann = this.drag.annotation
-    this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw' }
+    this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw', handleIndex: -1 }
     if (this.isDegenerate(ann)) return
     this.annotations = [...this.annotations, ann]
     this.onCommit(this.annotations)
   }
 
-  cancelInProgress(): void {
-    this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw' }
+  onDblClick(e: MouseEvent): void {
+    const p = this.clientPoint(e)
+    if (this.getActiveTool() !== null) return
+    const hitId = hitTest(p, this.annotations)
+    if (!hitId) return
+    const ann = this.annotations.find((a) => a.id === hitId)
+    if (!ann || ann.type !== 'text') return
+    this.cancelInProgress()
+    this.startTextEntry(e, p, { ...ann.style }, ann.id, ann.text)
+  }
+
+  cancelInProgress(): boolean {
+    const hadProgress = this.drag.annotation !== null || this.textWrapper !== null
+    this.drag = { startX: 0, startY: 0, annotation: null, mode: 'draw', handleIndex: -1 }
     this.removeTextWrapper()
     this.onPreview(this.annotations)
+    return hadProgress
   }
 
   private createInitial(tool: ToolType, p: Point, style: ToolStyle): Annotation | null {
@@ -169,6 +290,26 @@ export class ToolManager {
     }
   }
 
+  private updateHoverCursor(p: Point): void {
+    const selectedId = this.getSelectedId()
+    if (selectedId) {
+      const sel = this.annotations.find((a) => a.id === selectedId)
+      if (sel) {
+        const hi = hitTestHandle(p, sel)
+        if (hi !== null) {
+          this.canvas.style.cursor = sel.type === 'arrow' ? 'crosshair' : HANDLE_CURSORS[hi]
+          return
+        }
+        if (hitTest(p, [sel])) {
+          this.canvas.style.cursor = 'move'
+          return
+        }
+      }
+    }
+    const hitId = hitTest(p, this.annotations)
+    this.canvas.style.cursor = hitId ? 'pointer' : 'default'
+  }
+
   private isDegenerate(ann: Annotation): boolean {
     switch (ann.type) {
       case 'rect':
@@ -179,7 +320,13 @@ export class ToolManager {
     }
   }
 
-  private startTextEntry(e: MouseEvent | TouchEvent, p: Point, tool: 'text' | 'callout', style: ToolStyle): void {
+  private startTextEntry(
+    e: MouseEvent | TouchEvent,
+    p: Point,
+    style: ToolStyle,
+    replaceId?: string,
+    initialText?: string,
+  ): void {
     this.removeTextWrapper()
 
     const container = this.canvas.parentElement!
@@ -220,7 +367,7 @@ export class ToolManager {
       min-height: 36px;
       font-size: ${style.fontSize}px;
       border: 2px dashed ${style.strokeColor};
-      background: rgba(0,0,0,0.5);
+      background: #fff;
       color: ${style.strokeColor};
       resize: both;
       padding: 4px;
@@ -228,6 +375,7 @@ export class ToolManager {
       font-family: sans-serif;
       line-height: 1.4;
     `
+    if (initialText) ta.value = initialText
 
     wrapper.appendChild(grip)
     wrapper.appendChild(ta)
@@ -243,8 +391,8 @@ export class ToolManager {
 
     const onGripDown = (ev: MouseEvent) => {
       dragging = true
-      dragOffX = ev.clientX - wrapper.offsetLeft
-      dragOffY = ev.clientY - wrapper.offsetTop
+      dragOffX = ev.clientX - parseFloat(wrapper.style.left)
+      dragOffY = ev.clientY - parseFloat(wrapper.style.top)
       grip.style.cursor = 'grabbing'
       ev.preventDefault()
     }
@@ -264,10 +412,13 @@ export class ToolManager {
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
 
+    let committed = false
     const commit = () => {
+      if (committed || !wrapper.isConnected) return
+      committed = true
       const text = ta.value.trim()
-      const wLeft = wrapper.offsetLeft
-      const wTop = wrapper.offsetTop
+      const wLeft = parseFloat(wrapper.style.left)
+      const wTop = parseFloat(wrapper.style.top)
 
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
@@ -277,25 +428,20 @@ export class ToolManager {
 
       // Convert wrapper CSS position back to canvas coords
       const rect = this.canvas.getBoundingClientRect()
+      const containerRect2 = container.getBoundingClientRect()
+      const canvasOffsetLeft = rect.left - containerRect2.left + container.scrollLeft
+      const canvasOffsetTop = rect.top - containerRect2.top + container.scrollTop
       const scaleX = this.canvas.width / rect.width
       const scaleY = this.canvas.height / rect.height
-      const canvasX = wLeft * scaleX
-      const canvasY = wTop * scaleY
+      const canvasX = (wLeft - canvasOffsetLeft) * scaleX
+      const canvasY = (wTop - canvasOffsetTop) * scaleY
 
-      const id = uid()
-      let ann: Annotation
-      if (tool === 'text') {
-        ann = { id, type: 'text', style, x: canvasX, y: canvasY + style.fontSize, text }
+      const ann: Annotation = { id: replaceId ?? uid(), type: 'text', style, x: canvasX, y: canvasY + style.fontSize, text }
+      if (replaceId) {
+        this.annotations = this.annotations.map((a) => (a.id === replaceId ? ann : a))
       } else {
-        const w = ta.offsetWidth * scaleX
-        const h = (ta.offsetHeight + 10) * scaleY
-        ann = {
-          id, type: 'callout', style,
-          x: canvasX, y: canvasY + 10 * scaleY, width: w, height: h, text,
-          tailX: canvasX + w / 2, tailY: canvasY + h + 40 * scaleY,
-        } satisfies CalloutAnnotation
+        this.annotations = [...this.annotations, ann]
       }
-      this.annotations = [...this.annotations, ann]
       this.onCommit(this.annotations)
     }
 

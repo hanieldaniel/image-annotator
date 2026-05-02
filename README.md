@@ -53,14 +53,13 @@ const file = await openFilePicker()
 annotator.open({ type: 'file', file })
 ```
 
-### From a DOM element (screenshot)
+### From a screenshot
 
 ```ts
-const el = document.querySelector('#my-dashboard') as HTMLElement
-annotator.open({ type: 'dom', element: el })
+annotator.open({ type: 'screenshot' })
 ```
 
-Internally uses [html2canvas](https://html2canvas.hertzen.com/). Cross-origin content may not capture.
+Opens a fullscreen overlay; the user drags a region to capture. Internally uses html2canvas. Cross-origin content may not capture.
 
 ### From camera
 
@@ -83,20 +82,22 @@ Tools appear in the toolbar in this order:
 | `text` | Text label (click to place, Enter to commit) |
 | `blur` | Pixel blur / redact region |
 | `ellipse` | Ellipse / circle |
-| `callout` | Speech bubble with tail (moveable, resizable) |
 
 ---
 
 ## Tool style options
 
-Each annotation uses the currently active style. All four properties are controlled independently:
+Each annotation uses the currently active style:
 
 | Property | Type | Description |
 |---|---|---|
 | `color` | `string` | Fill color (CSS color string) |
+| `fillAlpha` | `number` | Fill opacity (0–1, applies to rect and ellipse) |
 | `strokeColor` | `string` | Stroke / border color |
 | `strokeWidth` | `number` | Stroke width in pixels (1–20) |
-| `opacity` | `number` | Global opacity (0–1) |
+| `opacity` | `number` | Global annotation opacity (0–1) |
+| `fontSize` | `number` | Font size in pixels (text tool) |
+| `radius` | `number` | Blur radius in pixels (blur tool) |
 
 ---
 
@@ -154,7 +155,6 @@ document.querySelector('#btn-arrow').addEventListener('click', () => annotator.s
 document.querySelector('#btn-text').addEventListener('click', () => annotator.selectTool('text'))
 document.querySelector('#btn-blur').addEventListener('click', () => annotator.selectTool('blur'))
 document.querySelector('#btn-ellipse').addEventListener('click', () => annotator.selectTool('ellipse'))
-document.querySelector('#btn-callout').addEventListener('click', () => annotator.selectTool('callout'))
 
 // style controls
 document.querySelector('#color').addEventListener('input', (e) =>
@@ -187,13 +187,21 @@ annotator.on('tool-change', (tool) => {
 ```ts
 annotator.open(source)           // open modal and load image
 annotator.close()                // close modal (call from save/cancel handlers)
-annotator.selectTool(tool)       // 'rect' | 'arrow' | 'text' | 'blur' | 'ellipse' | 'callout'
+annotator.selectTool(tool)       // 'rect' | 'arrow' | 'text' | 'blur' | 'ellipse'
 annotator.setColor(color)        // fill color
+annotator.setFillAlpha(alpha)    // fill opacity (0–1)
 annotator.setStrokeColor(color)  // stroke color
 annotator.setStrokeWidth(n)      // stroke width (px)
-annotator.setOpacity(n)          // 0–1
+annotator.setOpacity(n)          // global opacity (0–1)
+annotator.setFontSize(n)         // font size in px (text tool)
+annotator.setRadius(n)           // blur radius in px (blur tool)
+annotator.getSelected()          // returns selected annotation id or null
+annotator.setSelected(id)        // programmatically select an annotation
+annotator.deleteSelected()       // delete the currently selected annotation
 annotator.undo()                 // undo last annotation
 annotator.redo()                 // redo
+annotator.zoomIn()               // increase zoom by 0.25
+annotator.zoomOut()              // decrease zoom by 0.25
 annotator.on(event, handler)
 annotator.off(event, handler)
 ```
@@ -204,8 +212,15 @@ annotator.off(event, handler)
 |---|---|
 | `Ctrl+Z` / `⌘Z` | Undo |
 | `Ctrl+Y` / `⌘⇧Z` | Redo |
-| `Enter` | Commit text / callout input |
-| `Escape` | Discard text / callout input |
+| `Enter` | Commit text input |
+| `Escape` | Cancel in-progress annotation / deselect tool / deselect annotation |
+| `Delete` / `Backspace` | Delete selected annotation |
+
+---
+
+## Zoom behaviour
+
+When an image is opened, the initial zoom is automatically calculated so that images larger than the modal fit within view (zoom-out only). Small images display at their natural size (zoom = 1). The user can then zoom in or out using the toolbar buttons (range: 0.25×–4×).
 
 ---
 
@@ -256,7 +271,7 @@ onUnmounted(() => annotator.close())
 </script>
 
 <template>
-  <button @click="annotator.open({ type: 'camera' })">Capture & Annotate</button>
+  <button @click="annotator.open({ type: 'screenshot' })">Capture & Annotate</button>
 </template>
 ```
 

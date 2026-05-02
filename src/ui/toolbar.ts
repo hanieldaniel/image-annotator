@@ -1,4 +1,4 @@
-import type { ToolbarItem, ToolStyle, ToolType } from '../types'
+import type { ToolbarItem, ToolStyle, ToolType, Annotation } from '../types'
 import { icons } from './icons'
 import { toolControls } from '../core/toolControls'
 
@@ -8,7 +8,6 @@ const labels: Record<string, string> = {
   text: 'Text',
   blur: 'Blur',
   ellipse: 'Ellipse',
-  callout: 'Callout',
 }
 
 export function getToolbarHTML(items: ToolbarItem[], style: ToolStyle): string {
@@ -83,6 +82,26 @@ export function updateToolbarForActiveTool(toolbar: HTMLElement, tool: ToolType 
   toolbar.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
     btn.classList.toggle('im-active', btn.dataset.tool === tool)
   })
+}
+
+export function syncToolbarToAnnotation(toolbar: HTMLElement, ann: Annotation): void {
+  updateToolbarForActiveTool(toolbar, ann.type as ToolType)
+  const s = ann.style
+  const q = <T extends HTMLInputElement>(sel: string) => toolbar.querySelector<T>(sel)
+  const colorEl = q<HTMLInputElement>('.im-color')
+  if (colorEl) colorEl.value = s.color.startsWith('#') ? s.color : '#ff0000'
+  const fillAlphaEl = q<HTMLInputElement>('.im-fill-alpha')
+  if (fillAlphaEl) fillAlphaEl.value = String(s.fillAlpha)
+  const strokeColorEl = q<HTMLInputElement>('.im-stroke-color')
+  if (strokeColorEl) strokeColorEl.value = s.strokeColor
+  const strokeWidthEl = q<HTMLInputElement>('.im-stroke-width')
+  if (strokeWidthEl) strokeWidthEl.value = String(s.strokeWidth)
+  const opacityEl = q<HTMLInputElement>('.im-opacity')
+  if (opacityEl) opacityEl.value = String(s.opacity)
+  const fontSizeEl = q<HTMLInputElement>('.im-font-size')
+  if (fontSizeEl) fontSizeEl.value = String(s.fontSize)
+  const radiusEl = q<HTMLInputElement>('.im-radius')
+  if (radiusEl) radiusEl.value = String(s.radius)
 }
 
 export function updateZoomLabel(toolbar: HTMLElement, zoom: number): void {

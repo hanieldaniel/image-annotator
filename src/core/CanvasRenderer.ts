@@ -5,7 +5,6 @@ import type {
   TextAnnotation,
   BlurAnnotation,
   EllipseAnnotation,
-  CalloutAnnotation,
 } from '../types'
 
 const HANDLE_SIZE = 8
@@ -44,7 +43,6 @@ export class CanvasRenderer {
       case 'text': return this.drawText(ann)
       case 'blur': return this.drawBlur(ann)
       case 'ellipse': return this.drawEllipse(ann)
-      case 'callout': return this.drawCallout(ann)
     }
   }
 
@@ -105,7 +103,8 @@ export class CanvasRenderer {
 
   private drawBlur(ann: BlurAnnotation): void {
     const { ctx, canvas } = this
-    const { x, y, width, height, radius } = ann
+    const { x, y, width, height } = ann
+    const radius = ann.style.radius
     if (width === 0 || height === 0 || !this.imageRef) return
 
     const offscreen = document.createElement('canvas')
@@ -133,56 +132,6 @@ export class CanvasRenderer {
     ctx.stroke()
   }
 
-  private drawCallout(ann: CalloutAnnotation): void {
-    const { ctx } = this
-    const { x, y, width, height, text, tailX, tailY } = ann
-    const r = 10
-
-    ctx.fillStyle = ann.style.color
-    this.applyStroke(ann)
-
-    // Rounded rect bubble
-    ctx.beginPath()
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + width - r, y)
-    ctx.quadraticCurveTo(x + width, y, x + width, y + r)
-    ctx.lineTo(x + width, y + height - r)
-    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
-    ctx.lineTo(x + r, y + height)
-    ctx.quadraticCurveTo(x, y + height, x, y + height - r)
-    ctx.lineTo(x, y + r)
-    ctx.quadraticCurveTo(x, y, x + r, y)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
-
-    // Comic-book speech bubble tail: two bezier curves meeting at tip
-    const baseCenter = x + width / 2
-    const baseY = y + height
-    const a1x = baseCenter - 18
-    const a2x = baseCenter + 6
-
-    ctx.beginPath()
-    ctx.moveTo(a1x, baseY)
-    ctx.quadraticCurveTo(tailX - 30, (baseY + tailY) / 2 + 10, tailX, tailY)
-    ctx.quadraticCurveTo(tailX + 15, (baseY + tailY) / 2 - 10, a2x, baseY)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
-
-    // Text (multiline)
-    const fontSize = ann.style.fontSize
-    ctx.font = `${fontSize}px sans-serif`
-    ctx.fillStyle = ann.style.strokeColor
-    const lines = text.split('\n')
-    const lineH = fontSize * 1.4
-    const totalH = lines.length * lineH
-    const startY = y + (height - totalH) / 2 + fontSize
-    lines.forEach((line, i) => {
-      ctx.fillText(line, x + 12, startY + i * lineH)
-    })
-  }
-
   private drawHandles(ann: Annotation): void {
     switch (ann.type) {
       case 'rect':
@@ -198,10 +147,6 @@ export class CanvasRenderer {
         break
       case 'text':
         this.drawSelectionOutline(ann.x - 4, ann.y - ann.style.fontSize - 4, 128, ann.style.fontSize + 8)
-        break
-      case 'callout':
-        this.drawBoxHandles(ann.x, ann.y, ann.width, ann.height)
-        this.drawHandle(ann.tailX, ann.tailY)
         break
     }
   }

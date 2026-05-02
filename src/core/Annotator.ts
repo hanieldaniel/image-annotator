@@ -15,7 +15,7 @@ import { exportToBlob } from './Export'
 import { captureScreenshot } from '../sources/ScreenshotCapture'
 import { loadFile } from '../sources/FileUpload'
 import { captureFromCamera } from '../sources/CameraCapture'
-import { getToolbarHTML, updateToolbarForActiveTool, updateZoomLabel } from '../ui/toolbar'
+import { getToolbarHTML, updateToolbarForActiveTool, updateZoomLabel, syncToolbarToAnnotation } from '../ui/toolbar'
 import { STYLES } from '../ui/styles/styles'
 
 const DEFAULT_TOOLBAR: ToolbarItem[] = [
@@ -24,7 +24,6 @@ const DEFAULT_TOOLBAR: ToolbarItem[] = [
   { tool: 'text' },
   { tool: 'blur' },
   { tool: 'ellipse' },
-  { tool: 'callout' },
 ]
 
 const DEFAULT_STYLE: ToolStyle = {
@@ -172,9 +171,20 @@ export class Annotator implements AnnotatorAPI {
         this.annotations = annotations
         this.history.push(annotations)
         this.redraw()
+        if (this.activeTool !== null) this.selectTool(null)
       },
       (id) => {
         this.selectedId = id
+        if (id !== null) {
+          const ann = this.annotations.find((a) => a.id === id)
+          if (ann) {
+            this.style = { ...ann.style }
+            if (this.toolbar) syncToolbarToAnnotation(this.toolbar, ann)
+            this.emit('style-change', this.style)
+          }
+        } else {
+          if (this.toolbar) updateToolbarForActiveTool(this.toolbar, this.activeTool)
+        }
         this.redraw()
       },
       this.annotations,
@@ -183,10 +193,12 @@ export class Annotator implements AnnotatorAPI {
     const down = (e: MouseEvent | TouchEvent) => this.toolManager.onPointerDown(e)
     const move = (e: MouseEvent | TouchEvent) => this.toolManager.onPointerMove(e)
     const up = (e: MouseEvent | TouchEvent) => this.toolManager.onPointerUp(e)
+    const dbl = (e: MouseEvent) => this.toolManager.onDblClick(e)
 
     this.canvas.addEventListener('mousedown', down)
     this.canvas.addEventListener('mousemove', move)
     this.canvas.addEventListener('mouseup', up)
+    this.canvas.addEventListener('dblclick', dbl)
     this.canvas.addEventListener('touchstart', down, { passive: false })
     this.canvas.addEventListener('touchmove', move, { passive: false })
     this.canvas.addEventListener('touchend', up)
@@ -198,7 +210,16 @@ export class Annotator implements AnnotatorAPI {
     this._keyHandler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); this.undo() }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); this.redo() }
-      if (e.key === 'Escape') { e.preventDefault(); this.toolManager?.cancelInProgress() }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        const cancelled = this.toolManager?.cancelInProgress()
+        if (!cancelled && this.activeTool !== null) this.selectTool(null)
+        else if (!cancelled && this.selectedId !== null) {
+          this.selectedId = null
+          if (this.toolbar) updateToolbarForActiveTool(this.toolbar, null)
+          this.redraw()
+        }
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected() }
     }
     document.addEventListener('keydown', this._keyHandler)
@@ -219,7 +240,8 @@ export class Annotator implements AnnotatorAPI {
   }
 
   private applyZoom(): void {
-    this.canvas.style.transform = `scale(${this.zoom})`
+    this.canvas.style.width = `${this.canvas.width * this.zoom}px`
+    this.canvas.style.height = `${this.canvas.height * this.zoom}px`
     this.canvasWrap.classList.toggle('im-select-mode', this.activeTool === null)
     if (this.toolbar) updateZoomLabel(this.toolbar, this.zoom)
   }
@@ -250,6 +272,16 @@ export class Annotator implements AnnotatorAPI {
     await this.loadImage(imageData)
     this.renderer = new CanvasRenderer(this.canvas)
     this.bindCanvasEvents()
+    // Collapse canvas so its attribute-based size doesn't inflate the wrap before we measure
+    this.canvas.style.width = '1px'
+    this.canvas.style.height = '1px'
+    const availableWidth = this.canvasWrap.clientWidth
+    const availableHeight = this.canvasWrap.clientHeight
+    this.canvas.style.width = ''
+    this.canvas.style.height = ''
+    const zoomX = availableWidth > 0 && this.canvas.width > availableWidth ? availableWidth / this.canvas.width : 1
+    const zoomY = availableHeight > 0 && this.canvas.height > availableHeight ? availableHeight / this.canvas.height : 1
+    this.zoom = Math.min(zoomX, zoomY)
     this.applyZoom()
     this.redraw()
   }
@@ -287,37 +319,57 @@ export class Annotator implements AnnotatorAPI {
 
   setColor(color: string): void {
     this.style = { ...this.style, color }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
   }
 
   setFillAlpha(alpha: number): void {
     this.style = { ...this.style, fillAlpha: alpha }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
   }
 
   setStrokeColor(color: string): void {
     this.style = { ...this.style, strokeColor: color }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
   }
 
   setStrokeWidth(width: number): void {
     this.style = { ...this.style, strokeWidth: width }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
   }
 
   setOpacity(opacity: number): void {
     this.style = { ...this.style, opacity }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
   }
 
   setFontSize(size: number): void {
     this.style = { ...this.style, fontSize: size }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
   }
 
   setRadius(radius: number): void {
     this.style = { ...this.style, radius }
+    this.applyStyleToSelected()
     this.emit('style-change', this.style)
+  }
+
+  private applyStyleToSelected(): void {
+    if (!this.selectedId) return
+    this.annotations = this.annotations.map((a) => {
+      if (a.id !== this.selectedId) return a
+      const updated = { ...a, style: { ...this.style } }
+      if (a.type === 'blur') return { ...updated, radius: this.style.radius }
+      return updated
+    })
+    this.toolManager?.setAnnotations(this.annotations)
+    this.history.push(this.annotations)
+    this.redraw()
   }
 
   getSelected(): string | null {

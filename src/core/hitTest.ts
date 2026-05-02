@@ -39,9 +39,6 @@ export function hitTest(point: Point, annotations: Annotation[]): string | null 
       case 'text':
         if (hitRect(point, ann.x, ann.y - 14, 120, 20)) return ann.id
         break
-      case 'callout':
-        if (hitRect(point, ann.x, ann.y, ann.width, ann.height)) return ann.id
-        break
     }
   }
   return null

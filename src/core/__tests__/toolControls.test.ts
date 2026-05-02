@@ -44,15 +44,6 @@ describe('toolControls', () => {
     expect(c).not.toContain('strokeWidth')
   })
 
-  it('callout shows fontSize, strokeColor, strokeWidth', () => {
-    const c = toolControls('callout')
-    expect(c).toContain('fontSize')
-    expect(c).toContain('strokeColor')
-    expect(c).toContain('strokeWidth')
-    expect(c).not.toContain('fill')
-    expect(c).not.toContain('radius')
-  })
-
   it('null (select mode) shows no controls', () => {
     expect(toolControls(null)).toHaveLength(0)
   })
