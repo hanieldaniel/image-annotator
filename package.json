@@ -1,6 +1,6 @@
 {
   "name": "@hanieldaniel/img-marker",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Framework-agnostic image annotation library",
   "repository": {
     "type": "git",
