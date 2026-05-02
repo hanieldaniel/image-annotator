@@ -4,7 +4,7 @@
   "description": "Framework-agnostic image annotation library",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hanieldaniel/img-annotator"
+    "url": "https://github.com/hanieldaniel/image-annotator"
   },
   "author": {
     "name": "Haniel B Daniel"
