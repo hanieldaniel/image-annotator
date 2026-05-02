@@ -18,7 +18,6 @@ export async function captureFromCamera(root: ShadowRoot | Document = document):
     container.appendChild(video)
     container.appendChild(btn)
 
-    const target = root instanceof ShadowRoot ? root : document.body
     if (root instanceof ShadowRoot) root.appendChild(container)
     else document.body.appendChild(container)
 

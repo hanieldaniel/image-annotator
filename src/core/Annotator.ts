@@ -54,6 +54,7 @@ export class Annotator implements AnnotatorAPI {
   private selectedId: string | null = null
   private style: ToolStyle
   private image: HTMLImageElement | null = null
+  // eslint-disable-next-line @typescript-eslint/ban-types
   private handlers = new Map<string, Set<Function>>()
   private config: Required<AnnotatorConfig>
   private host!: HTMLElement
@@ -423,6 +424,7 @@ export class Annotator implements AnnotatorAPI {
   }
 
   private emit<K extends keyof AnnotatorEvents>(event: K, ...args: Parameters<AnnotatorEvents[K]>): void {
+    // eslint-disable-next-line @typescript-eslint/ban-types
     this.handlers.get(event)?.forEach((h) => (h as Function)(...args))
   }
 }
