@@ -2,6 +2,13 @@
   "name": "@hanieldaniel/img-marker",
   "version": "0.1.2",
   "description": "Framework-agnostic image annotation library",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hanieldaniel/img-annotator.git"
+  },
+  "author": {
+    "name": "Haniel B Daniel"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
