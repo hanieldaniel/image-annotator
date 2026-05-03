@@ -25,6 +25,16 @@ export const STYLES = `
     overflow: hidden;
   }
 
+  .im-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+  }
+
   .im-canvas-wrap {
     overflow: auto;
     flex: 1;
@@ -47,27 +57,37 @@ export const STYLES = `
 
   .im-toolbar {
     display: flex;
+    flex-direction: row;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px;
     padding: 8px 12px;
     background: #2a2a2a;
-    flex-wrap: wrap;
     border-top: 1px solid #333;
+    flex-shrink: 0;
   }
 
-  .im-tools,
+  .im-tools-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .im-options-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-left: 12px;
+    border-left: 1px solid #444;
+    flex-wrap: wrap;
+  }
+
   .im-history,
   .im-zoom {
     display: flex;
     gap: 4px;
     align-items: center;
-  }
-
-  .im-divider {
-    width: 1px;
-    height: 28px;
-    background: #444;
-    margin: 0 4px;
   }
 
   .im-tool-btn {
@@ -97,12 +117,6 @@ export const STYLES = `
     text-align: center;
   }
 
-  .im-controls {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
   .im-label {
     display: flex;
     align-items: center;
@@ -111,12 +125,52 @@ export const STYLES = `
     color: #aaa;
   }
 
-  .im-label input[type="range"] { width: 72px; accent-color: #2563eb; }
+  .im-label input[type="range"] {
+    width: 80px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .im-label input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px;
+    background: #555;
+    border-radius: 1px;
+  }
+
+  .im-label input[type="range"]::-moz-range-track {
+    height: 2px;
+    background: #555;
+    border-radius: 1px;
+  }
+
+  .im-label input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #2563eb;
+    margin-top: -5px;
+    transition: background 0.15s;
+  }
+
+  .im-label input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: none;
+    background: #2563eb;
+    transition: background 0.15s;
+  }
+
+  .im-label input[type="range"]:hover::-webkit-slider-thumb { background: #3b82f6; }
+  .im-label input[type="range"]:hover::-moz-range-thumb { background: #3b82f6; }
   .im-label input[type="color"] { width: 28px; height: 28px; border: none; border-radius: 4px; cursor: pointer; padding: 0; }
 
   .im-actions {
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
     gap: 8px;
     padding: 10px 14px;
     background: #2a2a2a;

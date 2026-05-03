@@ -15,7 +15,7 @@ import { exportToBlob } from './Export'
 import { captureScreenshot } from '../sources/ScreenshotCapture'
 import { loadFile } from '../sources/FileUpload'
 import { captureFromCamera } from '../sources/CameraCapture'
-import { getToolbarHTML, updateToolbarForActiveTool, updateZoomLabel, syncToolbarToAnnotation } from '../ui/toolbar'
+import { getToolbarHTML, getTopbarHTML, updateToolbarForActiveTool, updateZoomLabel, syncToolbarToAnnotation } from '../ui/toolbar'
 import { STYLES } from '../ui/styles/styles'
 
 const DEFAULT_TOOLBAR: ToolbarItem[] = [
@@ -45,6 +45,7 @@ export class Annotator implements AnnotatorAPI {
   private modal!: HTMLElement
   private canvas!: HTMLCanvasElement
   private canvasWrap!: HTMLElement
+  private topbar!: HTMLElement
   private toolbar!: HTMLElement
   private renderer!: CanvasRenderer
   private toolManager!: ToolManager
@@ -91,6 +92,14 @@ export class Annotator implements AnnotatorAPI {
     dialog.className = 'im-dialog'
     overlay.appendChild(dialog)
 
+    if (!this.config.customToolbar) {
+      this.topbar = document.createElement('div')
+      this.topbar.className = 'im-topbar'
+      this.topbar.innerHTML = getTopbarHTML()
+      dialog.appendChild(this.topbar)
+      this.bindTopbar(this.topbar)
+    }
+
     this.canvasWrap = document.createElement('div')
     this.canvasWrap.className = 'im-canvas-wrap'
 
@@ -120,6 +129,17 @@ export class Annotator implements AnnotatorAPI {
     document.body.appendChild(this.host)
   }
 
+  private bindTopbar(topbar: HTMLElement): void {
+    topbar.addEventListener('click', (e) => {
+      const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
+      if (!action) return
+      if (action.dataset.action === 'undo') this.undo()
+      if (action.dataset.action === 'redo') this.redo()
+      if (action.dataset.action === 'zoom-in') this.zoomIn()
+      if (action.dataset.action === 'zoom-out') this.zoomOut()
+    })
+  }
+
   private bindDefaultToolbar(toolbar: HTMLElement): void {
     toolbar.addEventListener('click', (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-tool]')
@@ -127,12 +147,6 @@ export class Annotator implements AnnotatorAPI {
         this.selectTool(btn.dataset.tool as ToolType)
         return
       }
-      const action = (e.target as HTMLElement).closest<HTMLElement>('[data-action]')
-      if (!action) return
-      if (action.dataset.action === 'undo') this.undo()
-      if (action.dataset.action === 'redo') this.redo()
-      if (action.dataset.action === 'zoom-in') this.zoomIn()
-      if (action.dataset.action === 'zoom-out') this.zoomOut()
     })
 
     toolbar.querySelector<HTMLInputElement>('.im-color')
@@ -244,7 +258,8 @@ export class Annotator implements AnnotatorAPI {
     this.canvas.style.width = `${this.canvas.width * this.zoom}px`
     this.canvas.style.height = `${this.canvas.height * this.zoom}px`
     this.canvasWrap.classList.toggle('im-select-mode', this.activeTool === null)
-    if (this.toolbar) updateZoomLabel(this.toolbar, this.zoom)
+    if (this.topbar) updateZoomLabel(this.topbar, this.zoom)
+    this.redraw()
   }
 
   private async save(): Promise<void> {
@@ -280,9 +295,9 @@ export class Annotator implements AnnotatorAPI {
     const availableHeight = this.canvasWrap.clientHeight
     this.canvas.style.width = ''
     this.canvas.style.height = ''
-    const zoomX = availableWidth > 0 && this.canvas.width > availableWidth ? availableWidth / this.canvas.width : 1
-    const zoomY = availableHeight > 0 && this.canvas.height > availableHeight ? availableHeight / this.canvas.height : 1
-    this.zoom = Math.min(zoomX, zoomY)
+    const zoomX = availableWidth > 0 ? availableWidth / this.canvas.width : 1
+    const zoomY = availableHeight > 0 ? availableHeight / this.canvas.height : 1
+    this.zoom = Math.min(Math.min(zoomX, zoomY), ZOOM_MAX)
     this.applyZoom()
     this.redraw()
   }

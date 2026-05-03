@@ -10,6 +10,24 @@ const labels: Record<string, string> = {
   ellipse: 'Ellipse',
 }
 
+export function getTopbarHTML(): string {
+  return `
+    <div class="im-history">
+      <button class="im-tool-btn" data-action="undo" title="Undo (Ctrl+Z)">${icons.undo}</button>
+      <button class="im-tool-btn" data-action="redo" title="Redo (Ctrl+Y)">${icons.redo}</button>
+    </div>
+    <div class="im-zoom">
+      <button class="im-tool-btn" data-action="zoom-out" title="Zoom out">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><line x1="6" y1="9" x2="12" y2="9"/><line x1="14" y1="14" x2="18" y2="18"/></svg>
+      </button>
+      <span class="im-zoom-level">100%</span>
+      <button class="im-tool-btn" data-action="zoom-in" title="Zoom in">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><line x1="9" y1="6" x2="9" y2="12"/><line x1="6" y1="9" x2="12" y2="9"/><line x1="14" y1="14" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  `
+}
+
 export function getToolbarHTML(items: ToolbarItem[], style: ToolStyle): string {
   const visible = items.filter((i) => !i.hidden)
 
@@ -23,9 +41,10 @@ export function getToolbarHTML(items: ToolbarItem[], style: ToolStyle): string {
     .join('')
 
   return `
-    <div class="im-tools">${toolBtns}</div>
-    <div class="im-divider"></div>
-    <div class="im-controls">
+    <div class="im-tools-row">
+      ${toolBtns}
+    </div>
+    <div class="im-options-row" style="display:none">
       <label class="im-label" data-control="fill" title="Fill color">
         Fill
         <input class="im-color" type="color" value="${style.color.startsWith('#') ? style.color : '#ff0000'}">
@@ -55,26 +74,15 @@ export function getToolbarHTML(items: ToolbarItem[], style: ToolStyle): string {
         <input class="im-radius" type="range" min="2" max="40" value="${style.radius}">
       </label>
     </div>
-    <div class="im-divider"></div>
-    <div class="im-history">
-      <button class="im-tool-btn" data-action="undo" title="Undo (Ctrl+Z)">${icons.undo}</button>
-      <button class="im-tool-btn" data-action="redo" title="Redo (Ctrl+Y)">${icons.redo}</button>
-    </div>
-    <div class="im-divider"></div>
-    <div class="im-zoom">
-      <button class="im-tool-btn" data-action="zoom-out" title="Zoom out">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><line x1="6" y1="9" x2="12" y2="9"/><line x1="14" y1="14" x2="18" y2="18"/></svg>
-      </button>
-      <span class="im-zoom-level">100%</span>
-      <button class="im-tool-btn" data-action="zoom-in" title="Zoom in">
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="9" r="6"/><line x1="9" y1="6" x2="9" y2="12"/><line x1="6" y1="9" x2="12" y2="9"/><line x1="14" y1="14" x2="18" y2="18"/></svg>
-      </button>
-    </div>
   `
 }
 
 export function updateToolbarForActiveTool(toolbar: HTMLElement, tool: ToolType | null): void {
   const controls = toolControls(tool)
+
+  const optionsRow = toolbar.querySelector<HTMLElement>('.im-options-row')
+  if (optionsRow) optionsRow.style.display = tool === null ? 'none' : ''
+
   toolbar.querySelectorAll<HTMLElement>('[data-control]').forEach((el) => {
     el.style.display = controls.includes(el.dataset.control as any) ? '' : 'none'
   })
@@ -104,7 +112,7 @@ export function syncToolbarToAnnotation(toolbar: HTMLElement, ann: Annotation): 
   if (radiusEl) radiusEl.value = String(s.radius)
 }
 
-export function updateZoomLabel(toolbar: HTMLElement, zoom: number): void {
-  const label = toolbar.querySelector<HTMLElement>('.im-zoom-level')
+export function updateZoomLabel(topbar: HTMLElement, zoom: number): void {
+  const label = topbar.querySelector<HTMLElement>('.im-zoom-level')
   if (label) label.textContent = `${Math.round(zoom * 100)}%`
 }
