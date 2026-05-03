@@ -46,9 +46,15 @@ export class CanvasRenderer {
     }
   }
 
+  private get displayScale(): number {
+    const w = this.canvas.offsetWidth
+    return w > 0 ? this.canvas.width / w : 1
+  }
+
   private applyStroke(ann: Annotation): void {
+    const s = this.displayScale
     this.ctx.strokeStyle = ann.style.strokeColor
-    this.ctx.lineWidth = ann.style.strokeWidth
+    this.ctx.lineWidth = ann.style.strokeWidth * s
   }
 
   private drawRect(ann: RectAnnotation): void {
@@ -64,8 +70,9 @@ export class CanvasRenderer {
   private drawArrow(ann: ArrowAnnotation): void {
     const { ctx } = this
     const { from, to } = ann
-    const sw = ann.style.strokeWidth
-    const headLen = Math.max(12, sw * 5)
+    const s = this.displayScale
+    const sw = ann.style.strokeWidth * s
+    const headLen = Math.max(12 * s, sw * 5)
     const angle = Math.atan2(to.y - from.y, to.x - from.x)
 
     ctx.strokeStyle = ann.style.strokeColor
@@ -92,7 +99,7 @@ export class CanvasRenderer {
 
   private drawText(ann: TextAnnotation): void {
     const { ctx } = this
-    const fontSize = ann.style.fontSize
+    const fontSize = ann.style.fontSize * this.displayScale
     ctx.font = `${fontSize}px sans-serif`
     ctx.fillStyle = ann.style.strokeColor
     const lines = ann.text.split('\n')
@@ -145,9 +152,14 @@ export class CanvasRenderer {
         this.drawHandle(ann.from.x, ann.from.y)
         this.drawHandle(ann.to.x, ann.to.y)
         break
-      case 'text':
-        this.drawSelectionOutline(ann.x - 4, ann.y - ann.style.fontSize - 4, 128, ann.style.fontSize + 8)
+      case 'text': {
+        this.ctx.font = `${ann.style.fontSize}px sans-serif`
+        const lines = ann.text.split('\n')
+        const measuredW = Math.max(...lines.map((l) => this.ctx.measureText(l).width))
+        const totalH = lines.length * ann.style.fontSize * 1.4
+        this.drawSelectionOutline(ann.x - 4, ann.y - ann.style.fontSize - 4, measuredW + 8, totalH + 8)
         break
+      }
     }
   }
 
@@ -163,10 +175,11 @@ export class CanvasRenderer {
 
   private drawSelectionOutline(x: number, y: number, w: number, h: number): void {
     const { ctx } = this
+    const s = this.displayScale
     ctx.save()
     ctx.strokeStyle = HANDLE_COLOR
-    ctx.lineWidth = 1.5
-    ctx.setLineDash([5, 3])
+    ctx.lineWidth = 1.5 * s
+    ctx.setLineDash([5 * s, 3 * s])
     ctx.strokeRect(x, y, w, h)
     ctx.setLineDash([])
     ctx.restore()
@@ -174,13 +187,15 @@ export class CanvasRenderer {
 
   private drawHandle(x: number, y: number): void {
     const { ctx } = this
-    const half = HANDLE_SIZE / 2
+    const s = this.displayScale
+    const size = HANDLE_SIZE * s
+    const half = size / 2
     ctx.save()
     ctx.fillStyle = HANDLE_BORDER
     ctx.strokeStyle = HANDLE_COLOR
-    ctx.lineWidth = 1.5
-    ctx.fillRect(x - half, y - half, HANDLE_SIZE, HANDLE_SIZE)
-    ctx.strokeRect(x - half, y - half, HANDLE_SIZE, HANDLE_SIZE)
+    ctx.lineWidth = 1.5 * s
+    ctx.fillRect(x - half, y - half, size, size)
+    ctx.strokeRect(x - half, y - half, size, size)
     ctx.restore()
   }
 }

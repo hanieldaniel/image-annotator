@@ -56,30 +56,41 @@ export function captureScreenshot(): Promise<string> {
       sel.style.height = `${h}px`
     }
 
-    const onMouseDown = (e: MouseEvent) => {
-      startX = e.clientX
-      startY = e.clientY
+    const getCoords = (e: MouseEvent | TouchEvent): { clientX: number; clientY: number } => {
+      if ('touches' in e) {
+        const t = e.touches[0] ?? e.changedTouches[0]
+        return { clientX: t.clientX, clientY: t.clientY }
+      }
+      return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY }
+    }
+
+    const onPointerDown = (e: MouseEvent | TouchEvent) => {
+      const { clientX, clientY } = getCoords(e)
+      startX = clientX
+      startY = clientY
       dragging = true
       hint.style.display = 'none'
     }
 
-    const onMouseMove = (e: MouseEvent) => {
+    const onPointerMove = (e: MouseEvent | TouchEvent) => {
       if (!dragging) return
-      const x = Math.min(e.clientX, startX)
-      const y = Math.min(e.clientY, startY)
-      const w = Math.abs(e.clientX - startX)
-      const h = Math.abs(e.clientY - startY)
+      const { clientX, clientY } = getCoords(e)
+      const x = Math.min(clientX, startX)
+      const y = Math.min(clientY, startY)
+      const w = Math.abs(clientX - startX)
+      const h = Math.abs(clientY - startY)
       updateDims(x, y, w, h)
     }
 
-    const onMouseUp = async (e: MouseEvent) => {
+    const onPointerUp = async (e: MouseEvent | TouchEvent) => {
       if (!dragging) return
       dragging = false
 
-      const x = Math.min(e.clientX, startX)
-      const y = Math.min(e.clientY, startY)
-      const w = Math.abs(e.clientX - startX)
-      const h = Math.abs(e.clientY - startY)
+      const { clientX, clientY } = getCoords(e)
+      const x = Math.min(clientX, startX)
+      const y = Math.min(clientY, startY)
+      const w = Math.abs(clientX - startX)
+      const h = Math.abs(clientY - startY)
 
       cleanup()
 
@@ -119,14 +130,20 @@ export function captureScreenshot(): Promise<string> {
     const cleanup = () => {
       overlay.remove()
       document.removeEventListener('keydown', onKeyDown)
-      overlay.removeEventListener('mousedown', onMouseDown)
-      overlay.removeEventListener('mousemove', onMouseMove)
-      overlay.removeEventListener('mouseup', onMouseUp)
+      overlay.removeEventListener('mousedown', onPointerDown)
+      overlay.removeEventListener('mousemove', onPointerMove)
+      overlay.removeEventListener('mouseup', onPointerUp)
+      overlay.removeEventListener('touchstart', onPointerDown)
+      overlay.removeEventListener('touchmove', onPointerMove)
+      overlay.removeEventListener('touchend', onPointerUp)
     }
 
-    overlay.addEventListener('mousedown', onMouseDown)
-    overlay.addEventListener('mousemove', onMouseMove)
-    overlay.addEventListener('mouseup', onMouseUp)
+    overlay.addEventListener('mousedown', onPointerDown)
+    overlay.addEventListener('mousemove', onPointerMove)
+    overlay.addEventListener('mouseup', onPointerUp)
+    overlay.addEventListener('touchstart', onPointerDown, { passive: true })
+    overlay.addEventListener('touchmove', onPointerMove, { passive: true })
+    overlay.addEventListener('touchend', onPointerUp, { passive: true })
     document.addEventListener('keydown', onKeyDown)
   })
 }

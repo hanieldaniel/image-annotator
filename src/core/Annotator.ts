@@ -245,6 +245,7 @@ export class Annotator implements AnnotatorAPI {
     this.canvas.style.height = `${this.canvas.height * this.zoom}px`
     this.canvasWrap.classList.toggle('im-select-mode', this.activeTool === null)
     if (this.toolbar) updateZoomLabel(this.toolbar, this.zoom)
+    this.redraw()
   }
 
   private async save(): Promise<void> {
@@ -280,9 +281,9 @@ export class Annotator implements AnnotatorAPI {
     const availableHeight = this.canvasWrap.clientHeight
     this.canvas.style.width = ''
     this.canvas.style.height = ''
-    const zoomX = availableWidth > 0 && this.canvas.width > availableWidth ? availableWidth / this.canvas.width : 1
-    const zoomY = availableHeight > 0 && this.canvas.height > availableHeight ? availableHeight / this.canvas.height : 1
-    this.zoom = Math.min(zoomX, zoomY)
+    const zoomX = availableWidth > 0 ? availableWidth / this.canvas.width : 1
+    const zoomY = availableHeight > 0 ? availableHeight / this.canvas.height : 1
+    this.zoom = Math.min(Math.min(zoomX, zoomY), ZOOM_MAX)
     this.applyZoom()
     this.redraw()
   }

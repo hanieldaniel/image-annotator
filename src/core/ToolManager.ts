@@ -133,7 +133,7 @@ export class ToolManager {
   }
 
   private clientPoint(e: MouseEvent | TouchEvent): Point {
-    if ('touches' in e) return this.point(e.touches[0])
+    if ('touches' in e) return this.point(e.touches[0] ?? e.changedTouches[0])
     return this.point(e as MouseEvent)
   }
 
@@ -169,6 +169,7 @@ export class ToolManager {
     }
 
     if (tool === 'text') {
+      if (this.textWrapper !== null) return
       this.startTextEntry(e, p, { ...this.getStyle() })
       return
     }
